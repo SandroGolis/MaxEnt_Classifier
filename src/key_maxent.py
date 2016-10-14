@@ -5,6 +5,7 @@ import numpy as np
 
 LEARNING_RATE = 0.0001
 BATCH_SIZE = 30
+BIAS_FEATURE = '_demo_feature_for_bias_'
 
 
 class MaxEntModel(object):
@@ -37,6 +38,7 @@ class MaxEntModel(object):
                matrix with the same shape as weights_matrix.
                The values will be empirical counts of features in the training set.
     """
+
     def __init__(self, map_name_to_id, labels):
         super(MaxEntModel, self).__init__()
         self.map_label_to_col = labels
@@ -44,24 +46,28 @@ class MaxEntModel(object):
         self.rows = len(map_name_to_id)
         self.cols = len(labels)
         self.weights_matrix = np.zeros((self.rows, self.cols))
-        self.observed_count = np.array()
+        self.observed_count = None
+
+    def update_weights(self, gradient, learning_rate):
+        self.weights_matrix += learning_rate * gradient
 
 
 class MaxEnt(Classifier):
-
     def __init__(self, new_model=None):
         super(MaxEnt, self).__init__(new_model)
 
-    def get_model(self): return self._model
+    def get_model(self):
+        return self._model
 
-    def set_model(self, new_model): self._model = new_model
+    def set_model(self, new_model):
+        self._model = new_model
 
     model = property(get_model, set_model)
 
     def train(self, instances, dev_instances=None):
         """
                 Construct a statistical model from labeled instances.
-                We will build 2 data structures
+                I will build 2 data structures
                 1. model.map_name_to_id (type: dictionary)
                    mapping: feature_name ---> feature_id
                 2. model.map_label_to_col (type: dictionary)
@@ -73,7 +79,7 @@ class MaxEnt(Classifier):
                 :type dev_instances: list(Documents)
                 :param dev_instances: Dev data, represented as a list of Documents
         """
-        map_name_to_id = {}
+        map_name_to_id = {BIAS_FEATURE: 0}
         labels = {}
         for instance in instances:
             fnames = instance.features()
@@ -85,38 +91,38 @@ class MaxEnt(Classifier):
                 if fname not in map_name_to_id:
                     map_name_to_id[fname] = len(map_name_to_id)
 
+            # Cache the features sparse vector internally within each document
+            fnames.append(BIAS_FEATURE)
+            instance.feature_vector = self.get_sparse_vector(fnames, map_name_to_id)
+
+        # Initialize model data structures
         self.model = MaxEntModel(map_name_to_id, labels)
+
+        # Calculate weights using Mini-batch Gradient Descent
         self.train_sgd(instances, dev_instances, LEARNING_RATE, BATCH_SIZE)
 
     def train_sgd(self, train_instances, dev_instances, learning_rate, batch_size):
         """
-            Train MaxEnt model with Mini-batch Stochastic Gradient.
-            :type train_instances: list(Documents)
-            :param train_instances: Training data, represented as a list of Documents
-
-            :type dev_instances: list(Documents)
-            :param dev_instances: Training data, represented as a list of Documents
-
-            :type learning_rate: Integer
-            :param learning_rate: Parameter for Mini-batch Stochastic Gradient
-
-            :type batch_size: float64
-            :param batch_size: Parameter for Mini-batch Stochastic Gradient
+            Train MaxEnt model with Mini-batch Gradient Descent.
         """
         # Calculate empirical count of features in the given training set.
         self.model.observed_count = self.calc_empirical_count(train_instances)
 
-        # Calculate expected count with current model
-        expected_count = self.calc_expected_count(train_instances)
-
-
-
+        # todo check convergence? define maximum iterations?
+        # todo mini-batch
+        for i in range(0, 10):
+            # Calculate expected count with current model
+            expected_count = self.calc_expected_count(train_instances)
+            # calculate gradient
+            gradient = self.model.observed_count - expected_count
+            # update weights
+            self.model.update_weights(gradient, learning_rate)
 
     def classify(self, instance):
         fnames = instance.features()
         # sparse representation is a list of feature id's
         # feature_id = feature_raw in weights_matrix
-        sparse_vector = self.get_sparse_vector(fnames)
+        sparse_vector = self.get_sparse_vector(fnames, self.model.map_name_to_id)
         prob_dict = {}
         for label in self.model.map_label_to_col:
             prob = self.get_prob_given_X(sparse_vector, label)
@@ -124,9 +130,9 @@ class MaxEnt(Classifier):
 
         return max(prob_dict, key=prob_dict.get)
 
-    def get_sparse_vector(self, fnames):
+    def get_sparse_vector(self, fnames, map_name_to_id):
         # todo what if feature name doesn't appear in mapping
-        return [self.model.map_name_to_id[name] for name in fnames]
+        return [map_name_to_id[name] for name in fnames]
 
     def get_prob_given_X(self, sparse_vector, label):
         col = self.model.map_label_to_col[label]
@@ -136,7 +142,7 @@ class MaxEnt(Classifier):
     def calc_empirical_count(self, train_instances):
         observed_counts = np.zeros((self.model.rows, self.model.cols))
         for instance in train_instances:
-            sparse_vector = self.get_sparse_vector(instance.features())
+            sparse_vector = instance.feature_vector
             col = self.model.map_label_to_col[instance.label]
             observed_counts[sparse_vector, col] += 1
 
@@ -156,12 +162,9 @@ class MaxEnt(Classifier):
         """
         expected_counts = np.zeros((self.model.rows, self.model.cols))
         for instance in train_instances:
-            sparse_vector = self.get_sparse_vector(instance.features())
-            for label, col in self.model.map_label_to_col:
+            sparse_vector = instance.feature_vector
+            for label, col in self.model.map_label_to_col.items():
                 prob = self.get_prob_given_X(sparse_vector, label)
                 expected_counts[sparse_vector, col] += prob
 
         return expected_counts
-
-
-

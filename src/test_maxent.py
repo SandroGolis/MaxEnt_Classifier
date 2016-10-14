@@ -65,10 +65,11 @@ def split_names_corpus(document_class=Name):
     """Split the names corpus into training, dev, and test sets"""
     names = NamesCorpus(document_class=document_class)
     total_len = len(names)
-    print "Total number of names: 5001 + 2943 = ", total_len
+    print "Total number of names: ", total_len
     seed(hash("names"))
     shuffle(names)
-    return names[:5000], names[5000:6000], names[6000:]
+    return names[:3], names[2:], names[2:]
+    # return names[:5000], names[5000:6000], names[6000:]
 
 
 def test_names_nltk():
@@ -80,4 +81,6 @@ def test_names_nltk():
     acc = accuracy(classifier, test)
     print acc
 
+
+test_names_nltk()
 test_names_nltk()
